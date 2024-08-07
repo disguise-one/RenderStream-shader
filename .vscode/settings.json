@@ -1,0 +1,3 @@
+{
+    "python.analysis.extraPaths": ["./pyrs_packages/Lib/site-packages"]
+}
