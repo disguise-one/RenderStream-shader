@@ -53,6 +53,13 @@ Samplers have different attributes to control the source of the texture data and
 #### `image`
 The texture data is loaded as an image from the `images` folder. It is not exposed as a parameter to RenderStream.
 
+The value must be the filename of the file in the images folder, including the extension, but excluding the folder.
+
+#### `pass`
+The texture data is generated every frame by a secondary shader. Helpful for optimisation and separating parts of the workload.
+
+The value must be the filename of the shader file in the `shaders/passes` folder, including the extension but excluding the folder.
+
 #### `min_filter`, `mag_filter`
 How to minify or magnify texture data when sampled at a different scale than the original texture data.
 

@@ -74,11 +74,12 @@ class InputTexture(BaseTexture):
         rs.getFrameImage(texInfo.imageId, self.frame)
 
 class ShaderTexture(BaseTexture):
-    def __init__(self, name: str, shader: ReloadableShader):
+    def __init__(self, name: str, shader: ReloadableShader, key_prefix=''):
         super().__init__(name)
         self.framebuffer = -1 # self.id is the texture (to read from), framebuffer is what we render to.
         self.shader = shader
-        self.textures: Mapping[str, BaseTexture] = {}
+        self.key_prefix = key_prefix
+        self._initTextures()
 
     def release(self, rs):
         super().release(rs)
@@ -109,7 +110,7 @@ class ShaderTexture(BaseTexture):
 
         for name, info in self.shader.uniforms.items():
             try:
-                shader_params.set_uniform(rs, name, info, frameData, stream, paramValues, self.textures)
+                shader_params.set_uniform(rs, name, info, frameData, stream, paramValues, self.textures, self.key_prefix)
             except Exception as err:
                 print(f"Unable to set {name} - {err}")
 
@@ -120,14 +121,39 @@ class ShaderTexture(BaseTexture):
         glUseProgram(0)
         glBindFramebuffer(GL_FRAMEBUFFER, 0)
 
-    def check_update(self):
+    def check_update(self, rs: RS.RenderStream):
         needs_update = self.shader.check_update()
 
         for tex in self.textures.values():
             if isinstance(tex, ShaderTexture):
-                needs_update |= tex.check_update()
+                needs_update |= tex.check_update(rs)
+
+        if needs_update:
+            self.release(rs)
+            self._initTextures()
 
         return needs_update
+    
+    def parameters(self):
+        import shader_params
+        params = shader_params.uniforms_to_parameters(self.shader.uniforms, key_prefix=self.key_prefix)
+        for tex in self.textures.values():
+            if isinstance(tex, ShaderTexture):
+                params.extend(tex.parameters())
+        return params
+
+    def _initTextures(self):
+        import shader_params
+        self.textures: Mapping[str, BaseTexture] = {}
+        for name, info in self.shader.uniforms.items():
+            if info["type"] == GL_SAMPLER_2D:
+                if 'image' in info:
+                    self.textures[name] = ImageTexture(name, info['image'])
+                elif 'pass' in info:
+                    prefix = f"{self.key_prefix}{name}_"
+                    self.textures[name] = ShaderTexture(name, shader_params.pass_shader(info['pass']), key_prefix=prefix)
+                else:
+                    self.textures[name] = InputTexture(name)
 
     def _updateFramebuffer(self, stream: RS.StreamDescription):
         # Ensure the frame buffer we are rendering to is correctly sized, etc.
@@ -156,10 +182,7 @@ class ShaderTexture(BaseTexture):
         for name, info in self.shader.uniforms.items():
             try:
                 if info["type"] == GL_SAMPLER_2D:
-                    if name not in self.textures:
-                        print(f"creating texture {name}")
-                        self.textures[name] = shader_params.create_texture(rs, name, info)
                     texture = self.textures[name]
                     texture.update(rs, frameData, stream, paramValues)
             except Exception as err:
-                print(f"Unable to set {name} - {err}")
+                print(f"Unable to update texture {name} - {err}")

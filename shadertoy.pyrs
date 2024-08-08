@@ -12,10 +12,7 @@ import shader_params
 
 # Global variables
 schema = None
-sceneTex: texture.ShaderTexture | None = None
-shaders: List[ReloadableShader] = []
-
-iLastScene = -1
+sceneTextures: List[texture.ShaderTexture] = []
 
 def initGL(rs):
     # Define a fullscreen quad
@@ -43,10 +40,11 @@ def initGL(rs):
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, quadIndices.nbytes, quadIndices, GL_STATIC_DRAW)
 
     from glob import glob
+    from pathlib import Path
     for shader_file in glob("shaders/*.glsl"):
         try:
             shader = ReloadableShader(shader_file)
-            shaders.append(shader)
+            sceneTextures.append(texture.ShaderTexture(Path(shader_file).stem, shader))
         except Exception as e:
             import traceback as tb
             tb.print_exc()
@@ -69,24 +67,15 @@ def render(rs: RS.RenderStream, frameData: RS.FrameData, stream: RS.StreamDescri
     scene: RS.RemoteParameters = schema.scenes.scenes[iScene]
     paramValues = rs.getFrameParameters(scene)
 
-    global sceneTex, iLastScene
-
-    if iScene != iLastScene:
-        # Erase textures on scene switch so we don't leak / fail to reload appropriately
-        if sceneTex:
-            sceneTex.release(rs)
-
-        sceneTex = texture.ShaderTexture('', shaders[iScene])
-        iLastScene = iScene
+    sceneTex = sceneTextures[iScene]
 
     shader_params.reset_frame()
 
     sceneTex.set_framebuffer(streamFramebuffer, stream)
     sceneTex.update(rs, frameData, stream, paramValues)
 
-    if sceneTex.check_update():
+    if sceneTex.check_update(rs):
         set_schema(rs)
-        iLastScene = -1
 
     return RS.FrameResponseData(streamCam, scene, {})
 
@@ -97,7 +86,7 @@ def set_schema(rs: RS.RenderStream):
     global schema
     schema = RS.Schema(
         ["Default"],
-        [RS.RemoteParameters(Path(shader.filename).stem, shader_params.uniforms_to_parameters(shader.uniforms)) for shader in shaders],
+        [RS.RemoteParameters(Path(sceneTex.shader.filename).stem, sceneTex.parameters()) for sceneTex in sceneTextures],
         engineName="RenderStream shadertoy",
         engineVersion="0",
         info="Renders glsl files in the same folder")

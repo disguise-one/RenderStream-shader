@@ -1,7 +1,9 @@
 from typing import Any, Mapping
+import os
 import renderstream as RS
 from OpenGL.GL import *
 import texture
+from reloadableshader import ReloadableShader
 
 iTexture = 0 # per-frame texture counter
 
@@ -10,9 +12,10 @@ def reset_frame():
     global iTexture
     iTexture = 0
 
-def set_uniform(rs: RS.RenderStream, name: str, info: Mapping, frameData: RS.FrameData, stream: RS.StreamDescription, paramValues: Mapping, textures: Mapping[str, texture.BaseTexture]):
+def set_uniform(rs: RS.RenderStream, name: str, info: Mapping, frameData: RS.FrameData, stream: RS.StreamDescription, paramValues: Mapping, textures: Mapping[str, texture.BaseTexture], key_prefix=''):
     location = info['location']
     type = info['type']
+    param_key = key_prefix + name
 
     def engine_eval():
         return eval(info['engine'], {
@@ -20,6 +23,9 @@ def set_uniform(rs: RS.RenderStream, name: str, info: Mapping, frameData: RS.Fra
             'stream': stream,
             'paramValues': paramValues,
         })
+    
+    def field_values(*field_suffixes):
+        return tuple(paramValues[f"{param_key}{suffix}"] for suffix in field_suffixes)
 
     if type == GL_SAMPLER_2D:
         global iTexture
@@ -45,26 +51,26 @@ def set_uniform(rs: RS.RenderStream, name: str, info: Mapping, frameData: RS.Fra
         if 'engine' in info:
             glUniform1f(location, engine_eval())
         else:
-            glUniform1f(location, paramValues[name])
+            glUniform1f(location, paramValues[param_key])
     elif type == GL_FLOAT_VEC2:
         if 'engine' in info:
             glUniform2f(location, *engine_eval())
         else:
-            glUniform2f(location, paramValues[f"{name}_x"], paramValues[f"{name}_y"])
+            glUniform2f(location, *field_values("_x", "_y"))
     elif type == GL_FLOAT_VEC3:
         if 'engine' in info:
             glUniform3f(location, *engine_eval())
         elif is_colour_vec(info):
-            glUniform3f(location, paramValues[f"{name}_r"], paramValues[f"{name}_g"], paramValues[f"{name}_b"])
+            glUniform3f(location, *field_values("_r", "_g", "_b"))
         else:
-            glUniform3f(location, paramValues[f"{name}_x"], paramValues[f"{name}_y"], paramValues[f"{name}_z"])
+            glUniform3f(location, *field_values("_x", "_y", "_z"))
     elif type == GL_FLOAT_VEC4:
         if 'engine' in info:
             glUniform4f(location, *engine_eval())
         elif is_colour_vec(info):
-            glUniform4f(location, paramValues[f"{name}_r"], paramValues[f"{name}_g"], paramValues[f"{name}_b"], paramValues[f"{name}_a"])
+            glUniform4f(location, *field_values("_r", "_g", "_b", "_a"))
         else:
-            glUniform4f(location, paramValues[f"{name}_x"], paramValues[f"{name}_y"], paramValues[f"{name}_z"], paramValues[f"{name}_w"])
+            glUniform4f(location, *field_values("_x", "_y", "_z", "_w"))
 
 def uniforms_to_parameters(uniforms: dict, key_prefix=''):
     params = []
@@ -83,8 +89,8 @@ def uniforms_to_parameters(uniforms: dict, key_prefix=''):
 
         type = info['type']
         if type == GL_SAMPLER_2D:
-            if 'image' in info:
-                continue # image sources are not exposed.
+            if 'image' in info or 'pass' in info:
+                continue # local sources are not exposed. passes are added by the containing texture
             params.append(RS.RemoteParameter(key_prefix + name, displayName, group, RS.RemoteParameterType.IMAGE))
         elif type == GL_FLOAT:
             params.append(RS.RemoteParameter(key_prefix + name, displayName, group, get_numeric_default(info)))
@@ -121,13 +127,8 @@ def wrap_to_gl(wrap_name: str):
         'mirror_clamp_to_edge': GL_MIRROR_CLAMP_TO_EDGE,
     }[wrap_name]
 
-def create_texture(rs, name: str, info: Mapping[str, Any]):
-    global textures
-
-    if 'image' in info:
-        return texture.ImageTexture(name, info['image'])
-    else:
-        return texture.InputTexture(name)
+def pass_shader(pass_name):
+    return ReloadableShader(os.path.join("shaders/passes", pass_name))
 
 def is_colour_vec(info):
     return 'isColour' in info and info['isColour']
