@@ -4,7 +4,7 @@ uniform float frequency = 25.0; // RS: min=0 max=50
 uniform float speed = 1; // RS: max=5
 uniform float amplitude = 1; // RS: min=0 max=30 display="Magnitude"
 uniform vec4 peakColour = vec4(0.9, 0.9, 0.9, 0.1); // RS: isColour=True
-uniform sampler2D input;
+uniform sampler2D input; // RS: wrap=clamp_to_edge
 
 uniform float time; // RS: engine=frameData.localTime
 uniform vec2 screenRes; // RS: engine="(stream.width, stream.height)"

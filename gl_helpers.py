@@ -119,9 +119,7 @@ def appLoop(rs: RS.RenderStream, initGL, render):
             for iStream in range(streams.nStreams):
                 stream: RS.StreamDescription = streams.streams[iStream]
 
-                glBindFramebuffer(GL_FRAMEBUFFER, streamFrameBuffers[iStream])
-
-                response = render(rs, frameData, stream)
+                response = render(rs, frameData, stream, streamFrameBuffers[iStream])
 
                 if response:
                     glData = RS.OpenGlData()

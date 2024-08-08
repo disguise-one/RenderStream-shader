@@ -8,13 +8,13 @@ from typing import Any, List, Mapping
 
 from reloadableshader import ReloadableShader
 import texture
+import shader_params
 
 # Global variables
 schema = None
+sceneTex: texture.ShaderTexture | None = None
 shaders: List[ReloadableShader] = []
 
-textures: Mapping[str, texture.BaseTexture] = {}
-iTexture = 0 # per-frame texture counter
 iLastScene = -1
 
 def initGL(rs):
@@ -42,10 +42,19 @@ def initGL(rs):
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBuffer)
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, quadIndices.nbytes, quadIndices, GL_STATIC_DRAW)
 
+    from glob import glob
+    for shader_file in glob("shaders/*.glsl"):
+        try:
+            shader = ReloadableShader(shader_file)
+            shaders.append(shader)
+        except Exception as e:
+            import traceback as tb
+            tb.print_exc()
+
     set_schema(rs)
 
 
-def render(rs: RS.RenderStream, frameData: RS.FrameData, stream: RS.StreamDescription):
+def render(rs: RS.RenderStream, frameData: RS.FrameData, stream: RS.StreamDescription, streamFramebuffer: int):
     streamCam = RS.CameraResponseData()
     streamCam.tTracked = frameData.tTracked
     try:
@@ -58,230 +67,37 @@ def render(rs: RS.RenderStream, frameData: RS.FrameData, stream: RS.StreamDescri
 
     iScene = frameData.scene if frameData.scene < schema.scenes.nScenes else 0
     scene: RS.RemoteParameters = schema.scenes.scenes[iScene]
-    shader: ReloadableShader = shaders[iScene]
+    paramValues = rs.getFrameParameters(scene)
 
-    global textures, iLastScene
+    global sceneTex, iLastScene
 
     if iScene != iLastScene:
         # Erase textures on scene switch so we don't leak / fail to reload appropriately
-        textures = {}
+        if sceneTex:
+            sceneTex.release(rs)
+
+        sceneTex = texture.ShaderTexture('', shaders[iScene])
         iLastScene = iScene
 
-    paramValues = rs.getFrameParameters(scene)
+    shader_params.reset_frame()
 
-    glDisable(GL_DEPTH_TEST)  # Disable depth test for fullscreen quad
-    glClearColor(0, 0, 0, 0)
-    glClear(GL_COLOR_BUFFER_BIT)
+    sceneTex.set_framebuffer(streamFramebuffer, stream)
+    sceneTex.update(rs, frameData, stream, paramValues)
 
-    glViewport(0, 0, stream.width, stream.height)
-
-    # Update textures before setting everything up.
-    for name, info in shader.uniforms.items():
-        try:
-            if info["type"] == GL_SAMPLER_2D:
-                if name not in textures:
-                    textures[name] = get_texture(rs, name, info)
-                texture = textures[name]
-                texture.update(rs, paramValues)
-        except Exception as err:
-            print(f"Unable to set {name} - {err}")
-
-    shader.use_program()
-
-    global iTexture
-    iTexture = 0
-    for name, info in shader.uniforms.items():
-        try:
-            set_uniform(rs, name, info, frameData, stream, paramValues)
-        except Exception as err:
-            print(f"Unable to set {name} - {err}")
-
-    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, c_void_p(0))
-
-    glFinish()
-
-    glUseProgram(0)
-    glBindFramebuffer(GL_FRAMEBUFFER, 0)
-
-    if shader.check_update():
+    if sceneTex.check_update():
         set_schema(rs)
+        iLastScene = -1
 
     return RS.FrameResponseData(streamCam, scene, {})
 
-def set_uniform(rs: RS.RenderStream, name: str, info: Mapping, frameData: RS.FrameData, stream: RS.StreamDescription, paramValues: Mapping):
-    location = info['location']
-    type = info['type']
-
-    def engine_eval():
-        return eval(info['engine'], {
-            'frameData': frameData,
-            'stream': stream,
-            'paramValues': paramValues,
-        })
-
-    if type == GL_SAMPLER_2D:
-        global textures, iTexture
-        texture = textures[name]
-
-        glActiveTexture(GL_TEXTURE0 + iTexture)
-        glBindTexture(GL_TEXTURE_2D, texture.id)
-
-        # Set texture parameters
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter_to_gl(info.get('min_filter', 'linear')))
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter_to_gl(info.get('mag_filter', 'linear')))
-
-        default_wrap = info.get('wrap', 'repeat')
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap_to_gl(info.get('wrap_s', default_wrap)))
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap_to_gl(info.get('wrap_t', default_wrap)))
-
-        glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, info.get('border_colour', (0., 0., 0., 0.)))
-
-        glUniform1i(location, iTexture)
-
-        iTexture += 1
-    elif type == GL_FLOAT:
-        if 'engine' in info:
-            glUniform1f(location, engine_eval())
-        else:
-            glUniform1f(location, paramValues[name])
-    elif type == GL_FLOAT_VEC2:
-        if 'engine' in info:
-            glUniform2f(location, *engine_eval())
-        else:
-            glUniform2f(location, paramValues[f"{name}_x"], paramValues[f"{name}_y"])
-    elif type == GL_FLOAT_VEC3:
-        if 'engine' in info:
-            glUniform3f(location, *engine_eval())
-        elif is_colour_vec(info):
-            glUniform3f(location, paramValues[f"{name}_r"], paramValues[f"{name}_g"], paramValues[f"{name}_b"])
-        else:
-            glUniform3f(location, paramValues[f"{name}_x"], paramValues[f"{name}_y"], paramValues[f"{name}_z"])
-    elif type == GL_FLOAT_VEC4:
-        if 'engine' in info:
-            glUniform4f(location, *engine_eval())
-        elif is_colour_vec(info):
-            glUniform4f(location, paramValues[f"{name}_r"], paramValues[f"{name}_g"], paramValues[f"{name}_b"], paramValues[f"{name}_a"])
-        else:
-            glUniform4f(location, paramValues[f"{name}_x"], paramValues[f"{name}_y"], paramValues[f"{name}_z"], paramValues[f"{name}_w"])
-
-def shader_to_scene(shader: ReloadableShader):
-    from pathlib import Path
-
-    params = []
-    for name, info in sorted(shader.uniforms.items()):
-        name: str
-
-        if 'engine' in info:
-            continue # controlled programmatically.
-
-        displayName = info.get('display', name_to_display(name))
-        group = info.get('group', '')
-
-        type = info['type']
-        if type == GL_SAMPLER_2D:
-            if 'image' in info:
-                continue # image sources are not exposed.
-            params.append(RS.RemoteParameter(name, displayName, group, RS.RemoteParameterType.IMAGE))
-        elif type == GL_FLOAT:
-            params.append(RS.RemoteParameter(name, displayName, group, get_numeric_default(info)))
-        elif type == GL_FLOAT_VEC2:
-            params.append(RS.RemoteParameter(f"{name}_x", f"{displayName} X", group, get_numeric_default(info, 0)))
-            params.append(RS.RemoteParameter(f"{name}_y", f"{displayName} Y", group, get_numeric_default(info, 1)))
-        elif type == GL_FLOAT_VEC3:
-            if is_colour_vec(info):
-                params.append(RS.RemoteParameter(f"{name}_r", f"{displayName} R", group, get_numeric_default(info, 0)))
-                params.append(RS.RemoteParameter(f"{name}_g", f"{displayName} G", group, get_numeric_default(info, 1)))
-                params.append(RS.RemoteParameter(f"{name}_b", f"{displayName} B", group, get_numeric_default(info, 2)))
-            else:
-                params.append(RS.RemoteParameter(f"{name}_x", f"{displayName} X", group, get_numeric_default(info, 0)))
-                params.append(RS.RemoteParameter(f"{name}_y", f"{displayName} Y", group, get_numeric_default(info, 1)))
-                params.append(RS.RemoteParameter(f"{name}_z", f"{displayName} Z", group, get_numeric_default(info, 2)))
-        elif type == GL_FLOAT_VEC4:
-            if is_colour_vec(info):
-                params.append(RS.RemoteParameter(f"{name}_r", f"{displayName} R", group, get_numeric_default(info, 0)))
-                params.append(RS.RemoteParameter(f"{name}_g", f"{displayName} G", group, get_numeric_default(info, 1)))
-                params.append(RS.RemoteParameter(f"{name}_b", f"{displayName} B", group, get_numeric_default(info, 2)))
-                params.append(RS.RemoteParameter(f"{name}_a", f"{displayName} A", group, get_numeric_default(info, 3)))
-            else:
-                params.append(RS.RemoteParameter(f"{name}_x", f"{displayName} X", group, get_numeric_default(info, 0)))
-                params.append(RS.RemoteParameter(f"{name}_y", f"{displayName} Y", group, get_numeric_default(info, 1)))
-                params.append(RS.RemoteParameter(f"{name}_z", f"{displayName} Z", group, get_numeric_default(info, 2)))
-                params.append(RS.RemoteParameter(f"{name}_w", f"{displayName} W", group, get_numeric_default(info, 3)))
-
-    return RS.RemoteParameters(Path(shader.filename).stem, params)
-
-def filter_to_gl(filter_name: str):
-    return {
-        'nearest': GL_NEAREST,
-        'linear': GL_LINEAR,
-        'nearest_mipmap_nearest': GL_NEAREST_MIPMAP_NEAREST,
-        'nearest_mipmap_linear': GL_NEAREST_MIPMAP_LINEAR,
-        'linear_mipmap_nearest': GL_LINEAR_MIPMAP_NEAREST,
-        'linear_mipmap_linear': GL_LINEAR_MIPMAP_LINEAR,
-    }[filter_name]
-
-def wrap_to_gl(wrap_name: str):
-    return {
-        'clamp_to_edge': GL_CLAMP_TO_EDGE,
-        'clamp_to_border': GL_CLAMP_TO_BORDER,
-        'mirrored_repeat': GL_MIRRORED_REPEAT,
-        'repeat': GL_REPEAT,
-        'mirror_clamp_to_edge': GL_MIRROR_CLAMP_TO_EDGE,
-    }[wrap_name]
-
-def get_texture(rs, name: str, info: Mapping[str, Any]):
-    global textures
-
-    if 'image' in info:
-        return texture.ImageTexture(name, info['image'])
-    else:
-        return texture.InputTexture(name)
-
-def is_colour_vec(info):
-    return 'isColour' in info and info['isColour']
-
-def get_numeric_default(info, default_index=None):
-    default = 0.0
-    if 'default' in info:
-        if default_index is not None:
-            default = info['default'][default_index]
-        else:
-            default = info['default']
-    return RS.NumericalDefaults(
-        default,
-        info.get('min', 0.0),
-        info.get('max', 1.0),
-        info.get('step', 0.1),
-    )
-
-def name_to_display(name):
-    import re
-    name = re.sub(r'(?<!^)(?=[A-Z])', ' ', name)
-    name = name.replace('_', ' ').replace('-', ' ').strip().lower()
-    return name[0].upper() + name[1:]
-
 
 def set_schema(rs: RS.RenderStream):
-    from glob import glob
-
-    # Reset everything.
-    global shaders, textures, iLastScene
-    shaders = []
-    textures = {}
-    iLastScene = -1
-
-    for shader_file in glob("shaders/*.glsl"):
-        try:
-            shader = ReloadableShader(shader_file)
-            shaders.append(shader)
-        except Exception as e:
-            import traceback as tb
-            tb.print_exc()
+    from pathlib import Path
 
     global schema
     schema = RS.Schema(
         ["Default"],
-        [shader_to_scene(shader) for shader in shaders],
+        [RS.RemoteParameters(Path(shader.filename).stem, shader_params.uniforms_to_parameters(shader.uniforms)) for shader in shaders],
         engineName="RenderStream shadertoy",
         engineVersion="0",
         info="Renders glsl files in the same folder")
