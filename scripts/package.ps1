@@ -1,6 +1,6 @@
 $zipFile = "shadertoy.zip"
 $buildFolder = "build"
-$filesToZip = Get-ChildItem shaders/*.glsl, *.py, *.pyrs, requirements.txt
+$filesToZip = Get-ChildItem shaders/*.glsl, images/*, *.py, *.pyrs, requirements.txt, README.md
 
 if (Test-Path $buildFolder) {
     Remove-Item -Recurse -Force $buildFolder

@@ -1,24 +1,21 @@
 import renderstream as RS
 import glm
 from OpenGL.GL import *
-from OpenGL.GL import shaders
 import numpy as np
 from ctypes import c_void_p
 from gl_helpers import appLoop
-from typing import List, Mapping
+from typing import Any, List, Mapping
 
 from reloadableshader import ReloadableShader
+import texture
 
 # Global variables
 schema = None
 shaders: List[ReloadableShader] = []
 
-class InputTexture:
-    id = -1
-    size = (0, 0)
-
-textures: Mapping[str, InputTexture] = {}
+textures: Mapping[str, texture.BaseTexture] = {}
 iTexture = 0 # per-frame texture counter
+iLastScene = -1
 
 def initGL(rs):
     # Define a fullscreen quad
@@ -48,16 +45,6 @@ def initGL(rs):
     set_schema(rs)
 
 
-def makeTex(imageData: RS.ImageFrameData):
-    # Generate the texture object
-    texture_id = glGenTextures(1)
-    glBindTexture(GL_TEXTURE_2D, texture_id)
-
-    # Allocate storage for the texture
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, imageData.width, imageData.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, None)
-
-    return texture_id
-
 def render(rs: RS.RenderStream, frameData: RS.FrameData, stream: RS.StreamDescription):
     streamCam = RS.CameraResponseData()
     streamCam.tTracked = frameData.tTracked
@@ -73,6 +60,13 @@ def render(rs: RS.RenderStream, frameData: RS.FrameData, stream: RS.StreamDescri
     scene: RS.RemoteParameters = schema.scenes.scenes[iScene]
     shader: ReloadableShader = shaders[iScene]
 
+    global textures, iLastScene
+
+    if iScene != iLastScene:
+        # Erase textures on scene switch so we don't leak / fail to reload appropriately
+        textures = {}
+        iLastScene = iScene
+
     paramValues = rs.getFrameParameters(scene)
 
     glDisable(GL_DEPTH_TEST)  # Disable depth test for fullscreen quad
@@ -80,6 +74,17 @@ def render(rs: RS.RenderStream, frameData: RS.FrameData, stream: RS.StreamDescri
     glClear(GL_COLOR_BUFFER_BIT)
 
     glViewport(0, 0, stream.width, stream.height)
+
+    # Update textures before setting everything up.
+    for name, info in shader.uniforms.items():
+        try:
+            if info["type"] == GL_SAMPLER_2D:
+                if name not in textures:
+                    textures[name] = get_texture(rs, name, info)
+                texture = textures[name]
+                texture.update(rs, paramValues)
+        except Exception as err:
+            print(f"Unable to set {name} - {err}")
 
     shader.use_program()
 
@@ -116,30 +121,20 @@ def set_uniform(rs: RS.RenderStream, name: str, info: Mapping, frameData: RS.Fra
 
     if type == GL_SAMPLER_2D:
         global textures, iTexture
-        texInfo: RS.ImageFrameData = paramValues[name]
-
-        if name not in textures:
-            textures[name] = InputTexture()
         texture = textures[name]
-
-        input_size = (texInfo.width, texInfo.height)
-        if texture.id == -1 or texture.size != input_size:
-            print(f'making texture parameter ({texInfo.width}x{texInfo.height} {texInfo.format})')
-            texture.id = makeTex(texInfo)
-            texture.size = input_size
-
-        frame = RS.SenderFrame(RS.OpenGlData())
-        frame.data.gl.texture = texture.id
-        rs.getFrameImage(texInfo.imageId, frame)
 
         glActiveTexture(GL_TEXTURE0 + iTexture)
         glBindTexture(GL_TEXTURE_2D, texture.id)
 
         # Set texture parameters
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter_to_gl(info.get('min_filter', 'linear')))
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter_to_gl(info.get('mag_filter', 'linear')))
+
+        default_wrap = info.get('wrap', 'repeat')
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap_to_gl(info.get('wrap_s', default_wrap)))
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap_to_gl(info.get('wrap_t', default_wrap)))
+
+        glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, info.get('border_colour', (0., 0., 0., 0.)))
 
         glUniform1i(location, iTexture)
 
@@ -184,6 +179,8 @@ def shader_to_scene(shader: ReloadableShader):
 
         type = info['type']
         if type == GL_SAMPLER_2D:
+            if 'image' in info:
+                continue # image sources are not exposed.
             params.append(RS.RemoteParameter(name, displayName, group, RS.RemoteParameterType.IMAGE))
         elif type == GL_FLOAT:
             params.append(RS.RemoteParameter(name, displayName, group, get_numeric_default(info)))
@@ -213,6 +210,33 @@ def shader_to_scene(shader: ReloadableShader):
 
     return RS.RemoteParameters(Path(shader.filename).stem, params)
 
+def filter_to_gl(filter_name: str):
+    return {
+        'nearest': GL_NEAREST,
+        'linear': GL_LINEAR,
+        'nearest_mipmap_nearest': GL_NEAREST_MIPMAP_NEAREST,
+        'nearest_mipmap_linear': GL_NEAREST_MIPMAP_LINEAR,
+        'linear_mipmap_nearest': GL_LINEAR_MIPMAP_NEAREST,
+        'linear_mipmap_linear': GL_LINEAR_MIPMAP_LINEAR,
+    }[filter_name]
+
+def wrap_to_gl(wrap_name: str):
+    return {
+        'clamp_to_edge': GL_CLAMP_TO_EDGE,
+        'clamp_to_border': GL_CLAMP_TO_BORDER,
+        'mirrored_repeat': GL_MIRRORED_REPEAT,
+        'repeat': GL_REPEAT,
+        'mirror_clamp_to_edge': GL_MIRROR_CLAMP_TO_EDGE,
+    }[wrap_name]
+
+def get_texture(rs, name: str, info: Mapping[str, Any]):
+    global textures
+
+    if 'image' in info:
+        return texture.ImageTexture(name, info['image'])
+    else:
+        return texture.InputTexture(name)
+
 def is_colour_vec(info):
     return 'isColour' in info and info['isColour']
 
@@ -240,8 +264,12 @@ def name_to_display(name):
 def set_schema(rs: RS.RenderStream):
     from glob import glob
 
-    global shaders
+    # Reset everything.
+    global shaders, textures, iLastScene
     shaders = []
+    textures = {}
+    iLastScene = -1
+
     for shader_file in glob("shaders/*.glsl"):
         try:
             shader = ReloadableShader(shader_file)

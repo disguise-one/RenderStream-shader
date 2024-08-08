@@ -20,10 +20,23 @@ They take the form:
 
 Other than the `<type>` and `<name>`, which are required by GLSL syntax, all other values are optional.
 
-### Attribute list
+### Common attributes
+All uniforms are able to use the following attributes
+
+#### `group`
+Puts the exposed parameter into a different group in the Designer UI.
+
+#### `display`
+Change the text the exposed parameter is displayed as in the Designer UI.
+
+### Numeric attributes
+Numeric attributes, including vectors, are controllable using the following attributes
 
 #### `isColour`
 If set to `True`, specifies that the vec4 is treated as a colour.
+
+#### `min`, `max`,  `step`
+For floating point and vector values, provides the range used for editing within Designer.
 
 #### `engine`
 Executes the contents of the attribute as python code which sets the uniform. The uniform is not exposed. There are a number of variables available:
@@ -32,11 +45,38 @@ Executes the contents of the attribute as python code which sets the uniform. Th
 * `stream` - the RS.StreamDefinition object for the current stream
 * `paramValues` - the values for the exposed parameters
 
-#### `min`, `max`,  `step`
-For floating point and vector values, provides the range used for editing within Designer.
+The example shaders use the engine attribute.
 
-#### `display`
-Change the text the exposed parameter is displayed as in the Designer UI.
+### Sampler attributes
+Samplers have different attributes to control the source of the texture data and how the sampler interprets texture data.
 
-#### `group`
-Puts the exposed parameter into a different group in the Designer UI.
+#### `image`
+The texture data is loaded as an image from the `images` folder. It is not exposed as a parameter to RenderStream.
+
+#### `min_filter`, `mag_filter`
+How to minify or magnify texture data when sampled at a different scale than the original texture data.
+
+Mipmap levels are only available for image texture data, not for live streamed texture inputs.
+
+* `nearest` - No interpolation (see: `GL_NEAREST`)
+* `linear` - (*Default*) Linear interpolation (see: `GL_LINEAR`)
+* `nearest_mipmap_nearest` - No interpolation, select nearest mip level (see: `GL_NEAREST_MIPMAP_NEAREST`)
+* `nearest_mipmap_linear` -  No interpolation, blend between mip levels (see: `GL_NEAREST_MIPMAP_LINEAR`)
+* `linear_mipmap_nearest` - Linear interpolation, select nearest mip level (see: `GL_LINEAR_MIPMAP_NEAREST`)
+* `linear_mipmap_linear` - Linear interpolation, blend between mip levels (see: `GL_LINEAR_MIPMAP_LINEAR`)
+
+#### `wrap`, `wrap_s`, `wrap_t`
+These options determine how the sampler behaves when the input UV coordinate is outside the 0-1 range.
+
+`wrap` is a convenience method for specifying both `wrap_s` and `wrap_t` together.
+
+* `clamp_to_edge` - Stretches the final pixel at the edge (see: `GL_CLAMP_TO_EDGE`)
+* `clamp_to_border` - Switches to a predefined `border_colour` (see: `GL_CLAMP_TO_BORDER`)
+* `mirrored_repeat` - Mirrors the texture on every repeat (see: `GL_MIRRORED_REPEAT`)
+* `repeat` - (*Default*) Wraps around between 0 and 1 (see: `GL_REPEAT`)
+* `mirror_clamp_to_edge` - allows a single mirrored repeat before clamping to the final pixel value (see: `GL_MIRROR_CLAMP_TO_EDGE`)
+
+#### `border_colour`
+This is a tuple of 4 values which hold the colour the sampler should use at the edge of the texture when `clamp_to_border` is specified.
+
+The default is `(0, 0, 0, 0)`
