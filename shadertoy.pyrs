@@ -1,7 +1,7 @@
 import renderstream as RS
 from OpenGL.GL import *
 import numpy as np
-from gl_helpers import appLoop
+from app import appLoop
 from typing import Any, List, Mapping
 
 from shader import ReloadableShader
