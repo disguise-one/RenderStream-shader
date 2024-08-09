@@ -1,5 +1,4 @@
 from __future__ import annotations
-from ctypes import c_void_p
 from typing import Any, Mapping, Tuple, Union
 from PIL import Image
 from OpenGL.GL import *
@@ -63,7 +62,7 @@ class PreviousTexture(BaseTexture):
         self.shader.set_shader(PreviousTexture.TEXTURE_FRAGMENT_SHADER_TEXT)
         self.parent = parent
         self.sampler = sampler
-        self.size = (0, 0)
+        self.params = (0, 0, 0, 0, 0, 0)
         self.framebuffer = -1
 
     @property
@@ -82,7 +81,7 @@ class PreviousTexture(BaseTexture):
         glClearColor(0, 0, 0, 0)
         glClear(GL_COLOR_BUFFER_BIT)
 
-        glViewport(0, 0, *self.size)
+        glViewport(0, 0, self.params[1], self.params[2])
 
         self.shader.use_program()
 
@@ -98,7 +97,7 @@ class PreviousTexture(BaseTexture):
         location = self.shader.uniforms['input']['location']
         glUniform1i(location, 0)
 
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, c_void_p(0))
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, None)
 
         glFinish()
 
@@ -107,10 +106,21 @@ class PreviousTexture(BaseTexture):
 
     def _updateFramebuffer(self):
         glBindTexture(GL_TEXTURE_2D, self.sourceTexture)
-        input_size = (glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH),
-                      glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT))
+        internal_format = glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT)
+        format, type = {
+            GL_RGBA32F: (GL_RGBA, GL_FLOAT),
+            GL_RGBA8: (GL_RGBA, GL_UNSIGNED_BYTE),
+        }[internal_format]
+        input_params = (
+            internal_format,
+            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH),
+            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT),
+            0,
+            format,
+            type
+        )
 
-        if self.framebuffer < 0 or self.id < 0 or self.size != input_size:
+        if self.framebuffer < 0 or self.id < 0 or self.params != input_params:
             if self.id >= 0:
                 glDeleteTextures([self.id])
 
@@ -119,8 +129,8 @@ class PreviousTexture(BaseTexture):
 
             self.id = glGenTextures(1)
             glBindTexture(GL_TEXTURE_2D, self.id)
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, input_size[0], input_size[1], 0, GL_BGRA, GL_UNSIGNED_BYTE, c_void_p(0))
-            self.size = input_size
+            glTexImage2D(GL_TEXTURE_2D, 0, *input_params, None)
+            self.params = input_params
 
             self.framebuffer = glGenFramebuffers(1)
 
@@ -155,7 +165,10 @@ class InputTexture(BaseTexture):
         if self.id == -1 or self.size != input_size:
             self.id = glGenTextures(1)
             glBindTexture(GL_TEXTURE_2D, self.id)
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, texInfo.width, texInfo.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, None)
+            if texInfo.format == RS.RSPixelFormat.RGBA32F:
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, texInfo.width, texInfo.height, 0, GL_RGBA, GL_FLOAT, None)
+            else:
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, texInfo.width, texInfo.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, None)
             self.size = input_size
 
         rs.getFrameImage(texInfo.imageId, self.frame)
@@ -207,7 +220,7 @@ class ShaderTexture(BaseTexture):
             except Exception as err:
                 print(f"Unable to set {name} - {err}")
 
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, c_void_p(0))
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, None)
 
         glFinish()
 
@@ -262,7 +275,10 @@ class ShaderTexture(BaseTexture):
 
             self.id = glGenTextures(1)
             glBindTexture(GL_TEXTURE_2D, self.id)
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, stream.width, stream.height, 0, GL_BGRA, GL_UNSIGNED_BYTE, c_void_p(0))
+            if stream.format == RS.RSPixelFormat.RGBA32F or self.key_prefix != '':
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, stream.width, stream.height, 0, GL_BGRA, GL_FLOAT, None)
+            else:
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, stream.width, stream.height, 0, GL_BGRA, GL_UNSIGNED_BYTE, None)
             self.size = stream_size
 
             self.framebuffer = glGenFramebuffers(1)
@@ -284,4 +300,4 @@ class ShaderTexture(BaseTexture):
                     texture = self.textures[name]
                     texture.update(rs, frameData, stream, paramValues)
             except Exception as err:
-                print(f"Unable to update texture {name} - {err}")
+                print(f"{self.name} is unable to update texture {name} - {err}")
