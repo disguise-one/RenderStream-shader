@@ -5,56 +5,6 @@ import glfw
 import glm
 from win32gui import GetDC
 
-def allocStreamTextures(streams: RS.StreamDescriptions):
-    streamTextures = []
-    streamFrameBuffers = []
-    
-    for iStream in range(streams.nStreams):
-        stream: RS.StreamDescription = streams.streams[iStream]
-
-        # colour
-        texture = glGenTextures(1)
-        streamTextures.append(texture)
-        glBindTexture(GL_TEXTURE_2D, texture)
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, stream.width, stream.height, 0, GL_BGRA, GL_UNSIGNED_BYTE, c_void_p(0))
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL)
-        glBindTexture(GL_TEXTURE_2D, 0 )
-
-        # depth
-        depth = glGenTextures(1)
-        glBindTexture(GL_TEXTURE_2D, depth)
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, stream.width, stream.height, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, None)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL)
-        glBindTexture( GL_TEXTURE_2D, 0 )
-
-        # framebuffer
-        frameBuffer = glGenFramebuffers(1)
-        streamFrameBuffers.append(frameBuffer)
-
-        glBindFramebuffer(GL_FRAMEBUFFER, frameBuffer)
-        glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, texture, 0)
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depth, 0)  
-        glDrawBuffers([GL_COLOR_ATTACHMENT0])
-
-        if glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE:
-            raise Exception("Failed fame buffer status check")
-
-        glBindFramebuffer(GL_FRAMEBUFFER, 0)
-        
-    assert(len(streamTextures) == streams.nStreams)
-    assert(len(streamFrameBuffers) == streams.nStreams)
-    return streamTextures, streamFrameBuffers
-
 def initWithOffscreenGLWindow(rs: RS.RenderStream):
     # Initialize the library
     glfw.init()
@@ -70,6 +20,9 @@ def initWithOffscreenGLWindow(rs: RS.RenderStream):
     hdc = GetDC(glfw.get_win32_window(window))
 
     rs.initialiseGpGpuWithOpenGlContexts(hrc, hdc)
+
+    version = glGetString(GL_VERSION)
+    print(f"OpenGL Version: {version.decode('utf-8')}")
 
 def getCameraViewProjMatrices(cam: RS.CameraData, clipping: RS.ProjectionClipping):
     nearZ = cam.nearZ
@@ -109,8 +62,6 @@ def appLoop(rs: RS.RenderStream, initGL, render):
     initGL(rs)
     
     streams: RS.StreamDescriptions = None
-    streamTextures = []
-    streamFrameBuffers = []
 
     while True:
         try:
@@ -119,16 +70,13 @@ def appLoop(rs: RS.RenderStream, initGL, render):
             for iStream in range(streams.nStreams):
                 stream: RS.StreamDescription = streams.streams[iStream]
 
-                response = render(rs, frameData, stream, streamFrameBuffers[iStream])
+                senderFrame, response = render(rs, frameData, stream)
 
-                if response:
-                    glData = RS.OpenGlData()
-                    glData.texture = streamTextures[iStream]
-                    rs.sendFrame(stream.handle, RS.SenderFrame(glData), response)
+                if senderFrame is not None and response is not None:
+                    rs.sendFrame(stream.handle, senderFrame, response)
         except RS.RenderStreamError as e:
             if e.error == RS.RS_ERROR.STREAMS_CHANGED:
                 streams = rs.getStreams()
-                streamTextures, streamFrameBuffers = allocStreamTextures(streams)
                 continue
             elif e.error == RS.RS_ERROR.TIMEOUT:
                 continue

@@ -42,14 +42,12 @@ def error_fragment_shader():
         _error_fragment_shader = shaders.compileShader(ERROR_FRAGMENT_SHADER_TEXT, GL_FRAGMENT_SHADER)
     return _error_fragment_shader
 
-class ReloadableShader:
-    def __init__(self, filename):
-        self.filename = filename
-        self.load_shader()
+class Shader:
+    def set_shader(self, shader_text):
+        if hasattr(self, 'fragment_shader'):
+            glDeleteShader(self.fragment_shader)
 
-    def load_shader(self):
-        self.last_mod_time = os.path.getmtime(self.filename)
-        self.fragment_shader, shader_text = self._load_fragment_shader()
+        self.fragment_shader = self._compile_fragment_shader(shader_text)
         self.shader_program = self._compile_shader_program()
         self.uniforms = self._get_shader_uniforms(shader_text)
 
@@ -65,29 +63,16 @@ class ReloadableShader:
             glVertexAttribPointer(attrib_TexCoord, 2, GL_FLOAT, GL_FALSE, 5 * 4, c_void_p(3*4))
             glEnableVertexAttribArray(attrib_TexCoord)
 
-    def check_update(self):
-        current_mod_time = os.path.getmtime(self.filename)
-        if current_mod_time != self.last_mod_time:
-            print(f"'{self.filename}' modified. Reloading shader...")
-            self.load_shader()
-            return True
-        return False
-
-
-    def _load_fragment_shader(self):
-        with open(self.filename, 'r') as file:
-            shader_text = file.read()
-            shader = glCreateShader(GL_FRAGMENT_SHADER)
-            glShaderSource( shader, [ shader_text.encode() ] )
-            glCompileShader( shader )
-            result = glGetShaderiv( shader, GL_COMPILE_STATUS )
-            if not(result):
-                # TODO: this will be wrong if the user has
-                # disabled traditional unpacking array support.
-                print(f"Failed to compile {self.filename}: {glGetShaderInfoLog( shader ).decode()}")
-                glDeleteShader(shader)
-                shader = error_fragment_shader()
-            return shader, shader_text
+    def _compile_fragment_shader(self, shader_text):
+        shader = glCreateShader(GL_FRAGMENT_SHADER)
+        glShaderSource( shader, [ shader_text.encode() ] )
+        glCompileShader( shader )
+        result = glGetShaderiv( shader, GL_COMPILE_STATUS )
+        if not result:
+            print(f"Failed to compile {self.filename}: {glGetShaderInfoLog( shader ).decode()}")
+            glDeleteShader(shader)
+            shader = error_fragment_shader()
+        return shader
 
     def _compile_shader_program(self):
         if hasattr(self, 'shader_program'):
@@ -135,12 +120,32 @@ class ReloadableShader:
 
             # Allow any attribute (including default) to be set manually
             if match.group(2):
+                from ast import literal_eval
                 attr_text = match.group(2).strip()
                 for keyval in shlex.split(attr_text):
                     name, value_text = keyval.split('=', 1)
                     try:
-                        attrs[name] = eval(value_text) # if it's numeric or boolean, parse it.
-                    except (SyntaxError, NameError):
-                        attrs[name] = value_text # not numeric or boolean, just use the string.
+                        attrs[name] = literal_eval(value_text)
+                    except (ValueError, SyntaxError):
+                        attrs[name] = value_text
 
         return attrs
+
+class ReloadableShader(Shader):
+    def __init__(self, filename):
+        self.filename = filename
+        self.load_shader()
+
+    def load_shader(self):
+        self.last_mod_time = os.path.getmtime(self.filename)
+        with open(self.filename, 'r') as file:
+            shader_text = file.read()
+            self.set_shader(shader_text)
+
+    def check_update(self):
+        current_mod_time = os.path.getmtime(self.filename)
+        if current_mod_time != self.last_mod_time:
+            print(f"'{self.filename}' modified. Reloading shader...")
+            self.load_shader()
+            return True
+        return False

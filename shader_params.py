@@ -3,7 +3,7 @@ import os
 import renderstream as RS
 from OpenGL.GL import *
 import texture
-from reloadableshader import ReloadableShader
+from shader import ReloadableShader
 
 iTexture = 0 # per-frame texture counter
 
@@ -89,8 +89,8 @@ def uniforms_to_parameters(uniforms: dict, key_prefix=''):
 
         type = info['type']
         if type == GL_SAMPLER_2D:
-            if 'image' in info or 'pass' in info:
-                continue # local sources are not exposed. passes are added by the containing texture
+            if 'image' in info or 'pass' in info or 'previous' in info:
+                continue # local sources are not exposed.
             params.append(RS.RemoteParameter(key_prefix + name, displayName, group, RS.RemoteParameterType.IMAGE))
         elif type == GL_FLOAT:
             params.append(RS.RemoteParameter(key_prefix + name, displayName, group, get_numeric_default(info)))

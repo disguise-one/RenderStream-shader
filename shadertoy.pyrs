@@ -1,12 +1,10 @@
 import renderstream as RS
-import glm
 from OpenGL.GL import *
 import numpy as np
-from ctypes import c_void_p
 from gl_helpers import appLoop
 from typing import Any, List, Mapping
 
-from reloadableshader import ReloadableShader
+from shader import ReloadableShader
 import texture
 import shader_params
 
@@ -52,7 +50,7 @@ def initGL(rs):
     set_schema(rs)
 
 
-def render(rs: RS.RenderStream, frameData: RS.FrameData, stream: RS.StreamDescription, streamFramebuffer: int):
+def render(rs: RS.RenderStream, frameData: RS.FrameData, stream: RS.StreamDescription):
     streamCam = RS.CameraResponseData()
     streamCam.tTracked = frameData.tTracked
     try:
@@ -67,17 +65,20 @@ def render(rs: RS.RenderStream, frameData: RS.FrameData, stream: RS.StreamDescri
     scene: RS.RemoteParameters = schema.scenes.scenes[iScene]
     paramValues = rs.getFrameParameters(scene)
 
-    sceneTex = sceneTextures[iScene]
-
-    shader_params.reset_frame()
-
-    sceneTex.set_framebuffer(streamFramebuffer, stream)
-    sceneTex.update(rs, frameData, stream, paramValues)
+    sceneTex: texture.ShaderTexture = sceneTextures[iScene]
 
     if sceneTex.check_update(rs):
         set_schema(rs)
+        return None, None
 
-    return RS.FrameResponseData(streamCam, scene, {})
+    shader_params.reset_frame()
+
+    sceneTex.update(rs, frameData, stream, paramValues)
+
+    sendFrame = RS.SenderFrame(RS.OpenGlData())
+    sendFrame.data.gl.texture = sceneTex.id
+
+    return sendFrame, RS.FrameResponseData(streamCam, scene, {})
 
 
 def set_schema(rs: RS.RenderStream):

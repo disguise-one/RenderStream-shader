@@ -60,6 +60,13 @@ The texture data is generated every frame by a secondary shader. Helpful for opt
 
 The value must be the filename of the shader file in the `shaders/passes` folder, including the extension but excluding the folder.
 
+#### `previous`
+The texture data is reused from a previous frame.
+
+The value must be either `this`, to access the previously generated frame, or the name of a sampler.
+
+Note that using this is likely to cause discrepancies in a cluster environment if frames are ever skipped, as the previous data will diverge.
+
 #### `min_filter`, `mag_filter`
 How to minify or magnify texture data when sampled at a different scale than the original texture data.
 
