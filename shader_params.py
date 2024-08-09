@@ -47,6 +47,11 @@ def set_uniform(rs: RS.RenderStream, name: str, info: Mapping, frameData: RS.Fra
         glUniform1i(location, iTexture)
 
         iTexture += 1
+    elif type == GL_INT:
+        if 'engine' in info:
+            glUniform1i(location, engine_eval())
+        else:
+            glUniform1i(location, int(paramValues[param_key]))
     elif type == GL_FLOAT:
         if 'engine' in info:
             glUniform1f(location, engine_eval())
@@ -92,6 +97,8 @@ def uniforms_to_parameters(uniforms: dict, key_prefix=''):
             if 'image' in info or 'pass' in info or 'previous' in info:
                 continue # local sources are not exposed.
             params.append(RS.RemoteParameter(key_prefix + name, displayName, group, RS.RemoteParameterType.IMAGE))
+        elif type == GL_INT:
+            params.append(RS.RemoteParameter(key_prefix + name, displayName, group, get_int_default(info)))
         elif type == GL_FLOAT:
             params.append(RS.RemoteParameter(key_prefix + name, displayName, group, get_numeric_default(info)))
         elif type == GL_FLOAT_VEC2:
@@ -145,6 +152,20 @@ def get_numeric_default(info, default_index=None):
         info.get('min', 0.0),
         info.get('max', 1.0),
         info.get('step', 0.1),
+    )
+
+def get_int_default(info, default_index=None):
+    default = 0.0
+    if 'default' in info:
+        if default_index is not None:
+            default = info['default'][default_index]
+        else:
+            default = info['default']
+    return RS.NumericalDefaults(
+        default,
+        info.get('min', 0.0),
+        info.get('max', 100.0),
+        info.get('step', 1.0),
     )
 
 def name_to_display(name):
