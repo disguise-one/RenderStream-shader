@@ -4,11 +4,17 @@ Loads GLSL fragment shaders and presents them as selectable RenderStream scenes.
 
 Shader uniforms are exposed as controllable RenderStream parameters.
 
+![ripple demo image](./doc/ripple.png)<br/>
+*The ripple demo shader running on the `ada.jpg` sample image*
+
 ## Installing
 
 1. Ensure [RenderStream-Python](https://github.com/disguise-one/renderStream-py) is installed
 2. Copy the repository into a folder in your RenderStream Projects folder.
 3. In Designer, configure a RenderStream layer to use the shadertoy asset.
+
+![the RenderStream layer](./doc/layer.png)<br/>
+*The ripple demo running in a RenderStream Layer inside Designer*
 
 ## Shader uniform syntax
 
