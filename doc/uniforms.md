@@ -1,64 +1,59 @@
-# Shader uniform syntax
+# Shader Uniform Syntax
 
-Uniforms take the form:
+Uniforms in GLSL shaders define properties that remain constant over a single frame. They are declared as:
 
 `uniform <type> <name> = <default value>; // RS: <attr>=<value> <attr2>="<value with spaces>"`
 
-Other than the `<type>` and `<name>`, which are required by GLSL syntax, all other values are optional.
+Only `<type>` and `<name>` are required by GLSL syntax. All other values are optional.
 
-## Common attributes
-All uniforms are able to use the following attributes
+## Common Attributes
 
 ### `group`
-Puts the exposed parameter into a different group in the Designer UI.
+Organizes the exposed parameter into a specific group in the Designer UI.
 
 ### `display`
-Change the text the exposed parameter is displayed as in the Designer UI.
+Specifies a custom label for the parameter in the Designer UI.
 
-## Numeric attributes
-Numeric attributes, including vectors, are controllable using the following attributes
+## Numeric Attributes
+
+For numeric uniforms, including vectors, the following attributes are available:
 
 ### `isColour`
-If set to `True`, specifies that the vec4 is treated as a colour.
+If set to `True`, treats the `vec4` as a colour.
 
-### `min`, `max`,  `step`
-For floating point and vector values, provides the range used for editing within Designer.
+### `min`, `max`, `step`
+Defines the range and step size for editing floating-point and vector values in Designer.
 
 ### `engine`
-Executes the contents of the attribute as python code which sets the uniform. The uniform is not exposed. There are a number of variables available:
+Executes Python code to set the uniform value dynamically. The uniform is not exposed as a parameter. Available variables include:
 
-* `frameData` - the RS.FrameData object for the current frame. 
-* `stream` - the RS.StreamDescription object for the current stream
-* `paramValues` - the values for the exposed parameters, allowing computed properties based on other uniforms.
+- `frameData`: The `RS.FrameData` object for the current frame.
+- `stream`: The `RS.StreamDescription` object for the current stream.
+- `paramValues`: Values of other exposed parameters, enabling computed properties.
 
-The example shaders use the engine attribute. For example, a uniform which contains the resolution of the current stream served by this instance could be
+Example:
 
 `uniform vec2 iResolution; // RS: engine=(stream.width,stream.height)`
 
-#### `FrameData` properties
+#### `FrameData` Properties
 
-    tTracked: ctypes.c_double   # disguise tracked time - not related to animation
-    localTime: ctypes.c_double  # Engine-local animation time
-    localTimeDelta: ctypes.c_double  # delta time since the last frame affecting the engine-local animation time
-    frameRateNumerator: ctypes.c_uint
-    frameRateDenominator: ctypes.c_uint
-    flags: FrameDataFlags  # Flags to control frame processing
-    scene: ctypes.c_uint32  # Hash of the selected scene for this frame.
+- `tTracked`: Tracked time (not related to animation).
+- `localTime`: Engine-local animation time.
+- `localTimeDelta`: Time delta since the last frame.
+- `frameRateNumerator`, `frameRateDenominator`: Frame rate details.
+- `flags`: Frame processing flags.
+- `scene`: Hash of the selected scene for this frame.
 
-#### `StreamDescription` properties
+#### `StreamDescription` Properties
 
-    handle: StreamHandle
-    channel: ctypes.c_char_p
-    mappingId: ctypes.c_uint64
-    iViewpoint: ctypes.c_int32
-    name: ctypes.c_char_p
-    width: ctypes.c_uint32
-    height: ctypes.c_uint32
-    format: RSPixelFormat
-    clipping: ProjectionClipping
+- `handle`, `channel`, `mappingId`, `iViewpoint`, `name`: Stream metadata.
+- `width`, `height`: Stream resolution.
+- `format`: Pixel format.
+- `clipping`: Projection clipping.
 
-## Sampler attributes
-Samplers have different attributes to control the source of the texture data and how the sampler interprets texture data.
+## Sampler Attributes
+
+Samplers control texture data sources and interpretation. Attributes include:
 
 ### `image`
 The texture data is loaded as an image from the `images` folder. It is not exposed as a parameter to RenderStream.
@@ -66,9 +61,7 @@ The texture data is loaded as an image from the `images` folder. It is not expos
 The value must be the filename of the file in the images folder, including the extension, but excluding the folder.
 
 ### `pass`
-The texture data is generated every frame by a secondary shader. Helpful for optimisation and separating parts of the workload.
-
-The value must be the filename of the shader file in the `shaders/passes` folder, including the extension but excluding the folder.
+Generates texture data every frame using a secondary shader. Specify the filename (with extension) from the `shaders/passes` folder.
 
 ### `previous`
 The texture data is reused from a previous frame.

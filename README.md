@@ -1,41 +1,42 @@
 ## RenderStream-ShaderToy
 
-Loads GLSL fragment shaders and presents them as selectable RenderStream scenes.
-
-Shader uniforms are exposed as controllable RenderStream parameters.
+RenderStream-ShaderToy allows you to load GLSL fragment shaders and present them as selectable RenderStream scenes. Shader uniforms are exposed as controllable RenderStream parameters, enabling dynamic customization.
 
 ![ripple demo image](./doc/ripple.png)<br/>
 *The ripple demo shader running on the `ada.jpg` sample image*
 
-## Installing
+## Installation
 
-1. Ensure [RenderStream-Python](https://github.com/disguise-one/renderStream-py) is installed
-2. Copy the repository into a folder in your RenderStream Projects folder.
-3. In Designer, configure a RenderStream layer to use the shadertoy asset.
+1. Install [RenderStream-Python](https://github.com/disguise-one/renderStream-py).
+2. Copy this repository into a folder within your RenderStream Projects directory.
+3. In Designer, configure a RenderStream layer to use the ShaderToy asset.
 
 ![the RenderStream layer](./doc/layer.png)<br/>
 *The ripple demo running in a RenderStream Layer inside Designer*
 
-## Creating new shaders
+## Creating Custom Shaders
 
-The demos included in the repository are for reference, in order to make the most of RenderStream-ShaderToy, custom shaders need to be written.
+The included demo shaders are for reference. To fully utilize RenderStream-ShaderToy, you can create custom shaders.
 
-Shaders are placed in the `shaders` folder in the RenderStream-shader asset folder. All files with a `.glsl` extension are parsed and added as scenes in the RenderStream asset, selectable in the Designer Layer.
+### Adding Shaders
 
-When a RenderStream layer is running, you are able to freely edit the shader files - when they are updated on-disk the shader is automatically reloaded and parsed, dynamically updating available parameters and the visual effect. This is natually less effective in a clustered environment for at-scale shader rendering, but is very useful for shader development.
+Place your custom shaders in the `shaders` folder within the RenderStream-ShaderToy asset directory. All `.glsl` files in this folder are parsed and added as selectable scenes in the RenderStream asset, visible in the Designer Layer.
 
-### Uniforms
+While a RenderStream layer is running, you can edit shader files directly. Updates to the files are automatically reloaded, dynamically updating parameters and visual effects. Note: This workflow is less effective in clustered environments but is ideal for shader development.
 
-Shaders have properties called uniforms, which are values which remain the same (i.e. are uniform) over a single generated frame. These uniforms are exposed as controllable parameters within the RenderStream Layer. They can be [extended with attributes](./doc/uniforms.md) which control how the property is exposed to RenderStream.
+### Shader Uniforms
 
-### Passes
+Uniforms are shader properties that remain constant over a single frame. These are exposed as controllable parameters in the RenderStream Layer. You can [extend uniforms with attributes](./doc/uniforms.md) to customize how they are exposed.
 
-More complex shaders may require multiple generative inputs - e.g. a scene with a terrain might generate a height map in a separate and sample that instead of computing it for every ray cast.
+### Shader Passes
 
-Passes are added to the `shaders/passes` folder. All glsl files are available to all scene shaders in the shaders folder using the [pass attribute](./doc/uniforms.md#pass).
+Complex shaders may require multiple generative inputs. For example, a terrain scene might generate a height map in a separate pass and sample it instead of computing it for every ray cast.
 
-Passes are also possible to manipulate using the [previous attribute](./doc/uniforms.md#previous) which allows access to a previous frame's image data, which is useful for many types of shader effects.
+- Add passes to the `shaders/passes` folder.
+- All `.glsl` files in this folder are accessible to scene shaders in the `shaders` folder using the [pass attribute](./doc/uniforms.md#pass).
 
-### Images
+You can also use the [previous attribute](./doc/uniforms.md#previous) to access a previous frame's image data, useful for effects like motion trails.
 
-Some shaders use a pre-defined image as reference, for example as a source of noise. The repository includes some noise images which are useful for texturing effects. Other images can be added to the `images/` folder as required.
+### Using Images
+
+Some shaders require predefined images, such as noise textures. The repository includes sample noise images for texturing effects. You can add additional images to the `images/` folder as needed.
