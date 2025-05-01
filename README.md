@@ -16,87 +16,26 @@ Shader uniforms are exposed as controllable RenderStream parameters.
 ![the RenderStream layer](./doc/layer.png)<br/>
 *The ripple demo running in a RenderStream Layer inside Designer*
 
-## Shader uniform syntax
+## Creating new shaders
 
-Uniforms can be extended with attributes which control how the property is exposed to RenderStream.
+The demos included in the repository are for reference, in order to make the most of RenderStream-ShaderToy, custom shaders need to be written.
 
-They take the form:
+Shaders are placed in the `shaders` folder in the RenderStream-shader asset folder. All files with a `.glsl` extension are parsed and added as scenes in the RenderStream asset, selectable in the Designer Layer.
 
-`uniform <type> <name> = <default value>; // RS: <attr>=<value> <attr2>="<value with spaces>"`
+When a RenderStream layer is running, you are able to freely edit the shader files - when they are updated on-disk the shader is automatically reloaded and parsed, dynamically updating available parameters and the visual effect. This is natually less effective in a clustered environment for at-scale shader rendering, but is very useful for shader development.
 
-Other than the `<type>` and `<name>`, which are required by GLSL syntax, all other values are optional.
+### Uniforms
 
-### Common attributes
-All uniforms are able to use the following attributes
+Shaders have properties called uniforms, which are values which remain the same (i.e. are uniform) over a single generated frame. These uniforms are exposed as controllable parameters within the RenderStream Layer. They can be [extended with attributes](./doc/uniforms.md) which control how the property is exposed to RenderStream.
 
-#### `group`
-Puts the exposed parameter into a different group in the Designer UI.
+### Passes
 
-#### `display`
-Change the text the exposed parameter is displayed as in the Designer UI.
+More complex shaders may require multiple generative inputs - e.g. a scene with a terrain might generate a height map in a separate and sample that instead of computing it for every ray cast.
 
-### Numeric attributes
-Numeric attributes, including vectors, are controllable using the following attributes
+Passes are added to the `shaders/passes` folder. All glsl files are available to all scene shaders in the shaders folder using the [pass attribute](./doc/uniforms.md#pass).
 
-#### `isColour`
-If set to `True`, specifies that the vec4 is treated as a colour.
+Passes are also possible to manipulate using the [previous attribute](./doc/uniforms.md#previous) which allows access to a previous frame's image data, which is useful for many types of shader effects.
 
-#### `min`, `max`,  `step`
-For floating point and vector values, provides the range used for editing within Designer.
+### Images
 
-#### `engine`
-Executes the contents of the attribute as python code which sets the uniform. The uniform is not exposed. There are a number of variables available:
-
-* `frameData` - the RS.FrameData object for the current frame
-* `stream` - the RS.StreamDefinition object for the current stream
-* `paramValues` - the values for the exposed parameters
-
-The example shaders use the engine attribute.
-
-### Sampler attributes
-Samplers have different attributes to control the source of the texture data and how the sampler interprets texture data.
-
-#### `image`
-The texture data is loaded as an image from the `images` folder. It is not exposed as a parameter to RenderStream.
-
-The value must be the filename of the file in the images folder, including the extension, but excluding the folder.
-
-#### `pass`
-The texture data is generated every frame by a secondary shader. Helpful for optimisation and separating parts of the workload.
-
-The value must be the filename of the shader file in the `shaders/passes` folder, including the extension but excluding the folder.
-
-#### `previous`
-The texture data is reused from a previous frame.
-
-The value must be either `this`, to access the previously generated frame, or the name of a sampler.
-
-Note that using this is likely to cause discrepancies in a cluster environment if frames are ever skipped, as the previous data will diverge.
-
-#### `min_filter`, `mag_filter`
-How to minify or magnify texture data when sampled at a different scale than the original texture data.
-
-Mipmap levels are only available for image texture data, not for live streamed texture inputs.
-
-* `nearest` - No interpolation (see: `GL_NEAREST`)
-* `linear` - (*Default*) Linear interpolation (see: `GL_LINEAR`)
-* `nearest_mipmap_nearest` - No interpolation, select nearest mip level (see: `GL_NEAREST_MIPMAP_NEAREST`)
-* `nearest_mipmap_linear` -  No interpolation, blend between mip levels (see: `GL_NEAREST_MIPMAP_LINEAR`)
-* `linear_mipmap_nearest` - Linear interpolation, select nearest mip level (see: `GL_LINEAR_MIPMAP_NEAREST`)
-* `linear_mipmap_linear` - Linear interpolation, blend between mip levels (see: `GL_LINEAR_MIPMAP_LINEAR`)
-
-#### `wrap`, `wrap_s`, `wrap_t`
-These options determine how the sampler behaves when the input UV coordinate is outside the 0-1 range.
-
-`wrap` is a convenience method for specifying both `wrap_s` and `wrap_t` together.
-
-* `clamp_to_edge` - Stretches the final pixel at the edge (see: `GL_CLAMP_TO_EDGE`)
-* `clamp_to_border` - Switches to a predefined `border_colour` (see: `GL_CLAMP_TO_BORDER`)
-* `mirrored_repeat` - Mirrors the texture on every repeat (see: `GL_MIRRORED_REPEAT`)
-* `repeat` - (*Default*) Wraps around between 0 and 1 (see: `GL_REPEAT`)
-* `mirror_clamp_to_edge` - allows a single mirrored repeat before clamping to the final pixel value (see: `GL_MIRROR_CLAMP_TO_EDGE`)
-
-#### `border_colour`
-This is a tuple of 4 values which hold the colour the sampler should use at the edge of the texture when `clamp_to_border` is specified.
-
-The default is `(0, 0, 0, 0)`
+Some shaders use a pre-defined image as reference, for example as a source of noise. The repository includes some noise images which are useful for texturing effects. Other images can be added to the `images/` folder as required.
