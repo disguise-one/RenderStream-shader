@@ -77,42 +77,55 @@ def set_uniform(rs: RS.RenderStream, name: str, info: Mapping, frameData: RS.Fra
         else:
             glUniform4f(location, *field_values("_x", "_y", "_z", "_w"))
 
+def generate_uniform_parameters(key_prefix: str, name: str, info):
+    if 'engine' in info:
+        return # controlled programmatically, no parameter
+
+    displayName = info.get('display', name_to_display(name))
+    group = info.get('group', '')
+
+    def append_fields(key_suffixes, display_suffixes):
+        for i, (key_suffix, display_suffix) in enumerate(zip(key_suffixes, display_suffixes)):
+            yield RS.RemoteParameter(key_prefix + name + key_suffix, displayName + display_suffix, group, get_numeric_default(info, i))
+
+    type = info['type']
+    if type == GL_SAMPLER_2D:
+        if 'image' in info or 'pass' in info or 'previous' in info:
+            return # local sources are not exposed, no parameter
+        yield RS.RemoteParameter(key_prefix + name, displayName, group, RS.RemoteParameterType.IMAGE)
+    elif type == GL_INT:
+        yield RS.RemoteParameter(key_prefix + name, displayName, group, get_int_default(info))
+    elif type == GL_FLOAT:
+        yield RS.RemoteParameter(key_prefix + name, displayName, group, get_numeric_default(info))
+    elif type == GL_FLOAT_VEC2:
+        for p in append_fields(('_x', '_y'), (" X", " Y")):
+            yield p
+    elif type == GL_FLOAT_VEC3:
+        if is_colour_vec(info):
+            for p in append_fields(('_r', '_g', '_b'), (" R", " G", " B")):
+                yield p
+        else:
+            for p in append_fields(('_x', '_y', '_z'), (" X", " Y", " Z")):
+                yield p
+    elif type == GL_FLOAT_VEC4:
+        if is_colour_vec(info):
+            for p in append_fields(('_r', '_g', '_b', '_a'), (" R", " G", " B", " A")):
+                yield p
+        else:
+            for p in append_fields(('_x', '_y', '_z', '_w'), (" X", " Y", " Z", " W")):
+                yield p
+
 def uniforms_to_parameters(uniforms: dict, key_prefix=''):
     params = []
     for name, info in sorted(uniforms.items()):
         name: str
 
-        if 'engine' in info:
-            continue # controlled programmatically.
+        try:
+            for param in generate_uniform_parameters(key_prefix, name, info):
+                params.append(param)
+        except Exception as e:
+            print(f"Unable to process parameter {name} - {e}" )
 
-        displayName = info.get('display', name_to_display(name))
-        group = info.get('group', '')
-
-        def append_fields(key_suffixes, display_suffixes):
-            for i, (key_suffix, display_suffix) in enumerate(zip(key_suffixes, display_suffixes)):
-                params.append(RS.RemoteParameter(key_prefix + name + key_suffix, displayName + display_suffix, group, get_numeric_default(info, i)))
-
-        type = info['type']
-        if type == GL_SAMPLER_2D:
-            if 'image' in info or 'pass' in info or 'previous' in info:
-                continue # local sources are not exposed.
-            params.append(RS.RemoteParameter(key_prefix + name, displayName, group, RS.RemoteParameterType.IMAGE))
-        elif type == GL_INT:
-            params.append(RS.RemoteParameter(key_prefix + name, displayName, group, get_int_default(info)))
-        elif type == GL_FLOAT:
-            params.append(RS.RemoteParameter(key_prefix + name, displayName, group, get_numeric_default(info)))
-        elif type == GL_FLOAT_VEC2:
-            append_fields(('_x', '_y'), (" X", " Y"))
-        elif type == GL_FLOAT_VEC3:
-            if is_colour_vec(info):
-                append_fields(('_r', '_g', '_b'), (" R", " G", " B"))
-            else:
-                append_fields(('_x', '_y', '_z'), (" X", " Y", " Z"))
-        elif type == GL_FLOAT_VEC4:
-            if is_colour_vec(info):
-                append_fields(('_r', '_g', '_b', '_a'), (" R", " G", " B", " A"))
-            else:
-                append_fields(('_x', '_y', '_z', '_w'), (" X", " Y", " Z", " W"))
     return params
 
 def filter_to_gl(filter_name: str):
